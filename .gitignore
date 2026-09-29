@@ -1,0 +1,25 @@
+# Go
+/backend/bin/
+*.test
+*.out
+coverage.*
+
+# Node
+node_modules/
+/frontend/dist/
+
+# Env and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+
+# Scan reports
+*.sarif
+zap-report.*

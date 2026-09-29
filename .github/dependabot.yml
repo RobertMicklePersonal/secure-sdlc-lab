@@ -1,0 +1,11 @@
+# Ecosystems for backend/ (gomod), frontend/ (npm) and Dockerfiles are
+# added in the phases that create those directories.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]

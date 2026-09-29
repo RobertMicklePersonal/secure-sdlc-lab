@@ -1,0 +1,21 @@
+name: Feature / task
+description: New work for the lab
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What should be true when this is done?
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      placeholder: "- [ ] ..."
+  - type: textarea
+    id: security
+    attributes:
+      label: Security considerations
+      description: Threats, data handled, new dependencies, permissions needed.

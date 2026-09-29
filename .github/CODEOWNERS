@@ -1,0 +1,5 @@
+# Default owner for everything in the repo
+*                   @robertmickle
+
+# Pipeline and security config changes always need owner review
+/.github/           @robertmickle
