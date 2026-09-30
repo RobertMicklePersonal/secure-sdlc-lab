@@ -11,3 +11,8 @@
 10020	FAIL	(Missing Anti-clickjacking Header)
 10021	FAIL	(X-Content-Type-Options Header Missing)
 10038	FAIL	(Content Security Policy (CSP) Header Not Set)
+90004	FAIL	(Insufficient Site Isolation Against Spectre Vulnerability) COEP, COOP and CORP are all set in nginx
+#
+# Reviewed and accepted (2026-09-30, first scan on PR #18):
+10049	IGNORE	(Storable and Cacheable Content) Informational. Hashed /assets/ are immutable on purpose; index.html is no-cache
+10109	IGNORE	(Modern Web Application) Informational: it is a React SPA, and the API is scanned directly from its OpenAPI spec

@@ -13,8 +13,19 @@ test('the UI is served with strict security headers', async ({ request }) => {
   expect(h['x-content-type-options']).toBe('nosniff')
   expect(h['x-frame-options']).toBe('DENY')
   expect(h['referrer-policy']).toBe('no-referrer')
+  expect(h['cross-origin-opener-policy']).toBe('same-origin')
+  expect(h['cross-origin-embedder-policy']).toBe('require-corp')
+  expect(h['cross-origin-resource-policy']).toBe('same-origin')
   // server_tokens off: no version number in the Server header.
   expect(h['server'] ?? '').not.toMatch(/\d/)
+})
+
+test('API responses carry their own security headers', async ({ request }) => {
+  const h = (await request.get('/api/notes')).headers()
+  expect(h['content-security-policy']).toBe("default-src 'none'; frame-ancestors 'none'")
+  expect(h['x-content-type-options']).toBe('nosniff')
+  expect(h['cache-control']).toBe('no-store')
+  expect(h['cross-origin-resource-policy']).toBe('same-origin')
 })
 
 test('the CSP blocks injected inline script', async ({ page }) => {

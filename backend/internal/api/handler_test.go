@@ -164,11 +164,12 @@ func TestMethodNotAllowed(t *testing.T) {
 func TestSecurityHeaders(t *testing.T) {
 	rec := do(t, newTestHandler(10), "GET", "/api/notes", "", nil)
 	want := map[string]string{
-		"X-Content-Type-Options":  "nosniff",
-		"X-Frame-Options":         "DENY",
-		"Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'",
-		"Referrer-Policy":         "no-referrer",
-		"Cache-Control":           "no-store",
+		"X-Content-Type-Options":       "nosniff",
+		"X-Frame-Options":              "DENY",
+		"Content-Security-Policy":      "default-src 'none'; frame-ancestors 'none'",
+		"Referrer-Policy":              "no-referrer",
+		"Cache-Control":                "no-store",
+		"Cross-Origin-Resource-Policy": "same-origin",
 	}
 	for k, v := range want {
 		if got := rec.Header().Get(k); got != v {
