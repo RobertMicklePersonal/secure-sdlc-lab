@@ -11,10 +11,12 @@ on:
 permissions:
   contents: read
 
-# A new push to a PR cancels its in-flight run; runs on main always finish.
+# A new push to a PR cancels its in-flight run. Pushes to main get a group
+# per commit, so they never cancel each other. (cancel-in-progress stays a
+# literal: Checkov silently skips workflows where it is an expression.)
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
 
 env:
   GOLANGCI_LINT_VERSION: v2.14.0

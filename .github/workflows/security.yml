@@ -1,0 +1,333 @@
+name: Security
+
+# Security gates for every PR, plus a weekly run so newly published CVEs are
+# caught even when the code does not change. Every scanner that can emit
+# SARIF uploads it to code scanning (Security tab). Triage rules are in
+# docs/security-triage.md.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 6 * * 1" # Mondays 06:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+env:
+  # Scanner versions live here so a bump is a one-line, reviewable change.
+  # Binaries are verified against these SHA-256 sums before they run.
+  GOSEC_VERSION: v2.29.0
+  GOVULNCHECK_VERSION: v1.8.0
+  TRIVY_VERSION: 0.74.0
+  TRIVY_SHA256: 2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a
+  GITLEAKS_VERSION: 8.30.1
+  GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+  CHECKOV_VERSION: 3.3.20
+  KICS_IMAGE: checkmarx/kics:v2.1.20@sha256:3e5a268eb8adda2e5a483c9359ddfc4cd520ab856a7076dc0b1d8784a37e2602
+
+jobs:
+  # ---------------------------------------------------------------- SAST
+  codeql:
+    name: CodeQL (${{ matrix.language }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write # upload SARIF to code scanning
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: go
+            build-mode: manual
+          - language: javascript-typescript
+            build-mode: none
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - if: matrix.language == 'go'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: backend/go.mod
+          cache: false
+
+      - uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          queries: security-extended
+
+      - if: matrix.build-mode == 'manual'
+        name: Build Go
+        working-directory: backend
+        run: go build ./...
+
+      - uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          category: /language:${{ matrix.language }}
+
+  gosec:
+    name: gosec
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write # upload SARIF to code scanning
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: backend/go.mod
+          cache: false
+      # Built from source with the job's Go; the module checksum database
+      # verifies the download.
+      - name: Run gosec
+        id: scan
+        working-directory: backend
+        run: >-
+          go run "github.com/securego/gosec/v2/cmd/gosec@${GOSEC_VERSION}"
+          -fmt sarif -out "${GITHUB_WORKSPACE}/gosec.sarif" -stdout -verbose text ./...
+      - name: Upload SARIF
+        if: always() && steps.scan.outcome != 'skipped'
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          sarif_file: gosec.sarif
+          category: gosec
+
+  # ----------------------------------------------------------------- SCA
+  govulncheck:
+    name: govulncheck
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write # upload SARIF to code scanning
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: backend/go.mod
+          cache: false
+      # SARIF mode always exits 0, so it runs first for the report and the
+      # text run below is the gate. govulncheck only flags vulnerable code
+      # that is actually reachable from this module.
+      - name: govulncheck (SARIF)
+        run: go run "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}" -format sarif ./... > "${GITHUB_WORKSPACE}/govulncheck.sarif"
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          sarif_file: govulncheck.sarif
+          category: govulncheck
+      - name: govulncheck (gate)
+        run: go run "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}" ./...
+
+  npm-audit:
+    name: npm audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      # npm audit has no SARIF output; the same advisories reach the
+      # Security tab through the Trivy filesystem scan below.
+      - name: npm audit (high and above)
+        run: npm audit --audit-level=high
+
+  trivy-fs:
+    name: Trivy (filesystem)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write # upload SARIF to code scanning
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Trivy
+        run: |
+          curl -sSfL -o /tmp/trivy.tgz \
+            "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          echo "${TRIVY_SHA256}  /tmp/trivy.tgz" | sha256sum -c -
+          sudo tar -xzf /tmp/trivy.tgz -C /usr/local/bin trivy
+      - name: Trivy (SARIF, all severities)
+        run: trivy fs --scanners vuln --format sarif --output trivy-fs.sarif .
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          sarif_file: trivy-fs.sarif
+          category: trivy-fs
+      - name: Trivy (gate on fixable HIGH/CRITICAL)
+        run: trivy fs --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 .
+
+  # ------------------------------------------------------------- secrets
+  gitleaks:
+    name: gitleaks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      security-events: write # upload SARIF to code scanning
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # scan full history, not just the tip
+          persist-credentials: false
+      # The CLI, not gitleaks-action: the action needs a paid license for
+      # organization-owned repositories.
+      - name: Install gitleaks
+        run: |
+          curl -sSfL -o /tmp/gitleaks.tgz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  /tmp/gitleaks.tgz" | sha256sum -c -
+          sudo tar -xzf /tmp/gitleaks.tgz -C /usr/local/bin gitleaks
+      - name: Run gitleaks
+        id: scan
+        run: gitleaks git --redact --no-banner --report-format sarif --report-path gitleaks.sarif .
+      - name: Upload SARIF
+        if: always() && steps.scan.outcome != 'skipped'
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          sarif_file: gitleaks.sarif
+          category: gitleaks
+
+  # ----------------------------------------------------------------- IaC
+  checkov:
+    name: Checkov (Dockerfiles, workflows)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write # upload SARIF to code scanning
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Checkov
+        run: pipx install "checkov==${CHECKOV_VERSION}"
+      - name: Run Checkov
+        id: scan
+        run: >-
+          checkov --directory . --framework dockerfile github_actions
+          --skip-download --compact
+          --output cli --output sarif --output-file-path checkov-results
+      - name: Upload SARIF
+        if: always() && steps.scan.outcome != 'skipped'
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          sarif_file: checkov-results/results_sarif.sarif
+          category: checkov
+
+  # Checkov has no docker-compose support, so KICS covers the compose file.
+  kics:
+    name: KICS (docker-compose)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      security-events: write # upload SARIF to code scanning
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Run KICS
+        id: scan
+        run: >-
+          docker run --rm --user "$(id -u):$(id -g)" -v "${GITHUB_WORKSPACE}:/src" "${KICS_IMAGE}"
+          scan --path /src/docker-compose.yml --no-progress --ci
+          --report-formats sarif --output-path /src/kics-results
+          --fail-on critical,high,medium
+      - name: Upload SARIF
+        if: always() && steps.scan.outcome != 'skipped'
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          sarif_file: kics-results/results.sarif
+          category: kics
+
+  # ----------------------------------------------------------- container
+  trivy-image:
+    name: Trivy (${{ matrix.image }} image)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write # upload SARIF to code scanning
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [backend, frontend]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ${{ matrix.image }}
+          load: true
+          push: false
+          tags: scan/${{ matrix.image }}:${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+      - name: Install Trivy
+        run: |
+          curl -sSfL -o /tmp/trivy.tgz \
+            "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          echo "${TRIVY_SHA256}  /tmp/trivy.tgz" | sha256sum -c -
+          sudo tar -xzf /tmp/trivy.tgz -C /usr/local/bin trivy
+      - name: Trivy (SARIF, all severities)
+        env:
+          IMAGE: scan/${{ matrix.image }}:${{ github.sha }}
+        run: trivy image --scanners vuln,secret --format sarif --output trivy-image.sarif "$IMAGE"
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          sarif_file: trivy-image.sarif
+          category: trivy-image-${{ matrix.image }}
+      - name: Trivy (gate on fixable HIGH/CRITICAL)
+        env:
+          IMAGE: scan/${{ matrix.image }}:${{ github.sha }}
+        run: trivy image --scanners vuln,secret --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 "$IMAGE"
+
+  # One stable check for the main ruleset to require.
+  security-result:
+    name: Security result
+    if: always()
+    needs: [codeql, gosec, govulncheck, npm-audit, trivy-fs, gitleaks, checkov, kics, trivy-image]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check job results
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Job results: $RESULTS"
+          for r in $RESULTS; do
+            if [ "$r" != "success" ]; then
+              echo "::error::A security gate did not pass ($r)"
+              exit 1
+            fi
+          done

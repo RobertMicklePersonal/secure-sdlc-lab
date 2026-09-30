@@ -10,7 +10,7 @@ These can't be set from files in the repo. Apply them in **Settings**.
 - [ ] Secret scanning: on
 - [ ] Push protection: on
 - [ ] Private vulnerability reporting: on
-- [ ] Code scanning: leave off "default setup" (CodeQL runs from our workflow in phase 5)
+- [ ] Code scanning: leave off "default setup" (CodeQL runs from `.github/workflows/security.yml`; default setup would conflict with it)
 
 ## Branch protection for `main` (Settings → Rules → Rulesets → New branch ruleset)
 
@@ -21,7 +21,7 @@ These can't be set from files in the repo. Apply them in **Settings**.
   - Required approvals: 0 while working solo (raise to 1 when collaborators join)
   - [ ] Require review from Code Owners
   - [ ] Dismiss stale approvals on new commits
-- [ ] Require status checks to pass: **CI result** (from `.github/workflows/ci.yml`; it fails if any CI job fails). Add the security checks after phase 5 lands.
+- [ ] Require status checks to pass: **CI result** (from `.github/workflows/ci.yml`; it fails if any CI job fails). Also require **Security result** (from `.github/workflows/security.yml`).
 - [ ] Require linear history
 
 ## General (Settings → General)
