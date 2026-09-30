@@ -1,0 +1,13 @@
+# ZAP baseline (passive) scan rules for the UI: http://localhost:8080
+#
+# Format: <rule id><TAB><IGNORE|WARN|FAIL><TAB><free-text note>
+#   IGNORE  drop the alert (needs a justification here)
+#   WARN    report it (the default for every rule not listed)
+#   FAIL    fail the job whenever the rule fires, whatever its risk
+# High-risk alerts fail the job anyway (see .zap/gate.sh). Rule IDs:
+# https://www.zaproxy.org/docs/alerts/
+#
+# Headers we already enforce: any regression fails the build.
+10020	FAIL	(Missing Anti-clickjacking Header)
+10021	FAIL	(X-Content-Type-Options Header Missing)
+10038	FAIL	(Content Security Policy (CSP) Header Not Set)

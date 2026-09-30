@@ -1,0 +1,133 @@
+# Contract for the notes API. The ZAP API scan (.github/workflows/dast.yml)
+# drives its active scan from this file, so keep it in step with
+# internal/api/handler.go.
+openapi: 3.0.3
+info:
+  title: secure-sdlc-lab notes API
+  version: 0.1.0
+  description: In-memory notes service. Every response is JSON.
+servers:
+  # The UI's nginx proxies /api to the Go service; scans go through it.
+  - url: http://localhost:8080
+paths:
+  /healthz:
+    get:
+      operationId: healthz
+      summary: Liveness check
+      responses:
+        "200":
+          description: Service is up
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+  /api/notes:
+    get:
+      operationId: listNotes
+      summary: List notes, newest first
+      responses:
+        "200":
+          description: All notes
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Note" }
+    post:
+      operationId: createNote
+      summary: Create a note
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NoteInput" }
+      responses:
+        "201":
+          description: Created
+          headers:
+            Location:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Note" }
+        "400": { $ref: "#/components/responses/Error" }
+        "413": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+        "507": { $ref: "#/components/responses/Error" }
+  /api/notes/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { $ref: "#/components/schemas/NoteID" }
+    get:
+      operationId: getNote
+      summary: Get one note
+      responses:
+        "200":
+          description: The note
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Note" }
+        "404": { $ref: "#/components/responses/Error" }
+    put:
+      operationId: updateNote
+      summary: Replace a note's title and body
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NoteInput" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Note" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "413": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+    delete:
+      operationId: deleteNote
+      summary: Delete a note
+      responses:
+        "204": { description: Deleted }
+        "404": { $ref: "#/components/responses/Error" }
+components:
+  schemas:
+    NoteID:
+      type: string
+      pattern: "^[0-9a-f]{32}$"
+      example: 0123456789abcdef0123456789abcdef
+    NoteInput:
+      type: object
+      additionalProperties: false
+      required: [title]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 200, example: Groceries }
+        body: { type: string, maxLength: 5000, example: Milk and eggs }
+    Note:
+      type: object
+      required: [id, title, body, createdAt, updatedAt]
+      properties:
+        id: { $ref: "#/components/schemas/NoteID" }
+        title: { type: string }
+        body: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+  responses:
+    Error:
+      description: Error
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }

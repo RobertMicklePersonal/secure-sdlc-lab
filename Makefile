@@ -2,7 +2,7 @@
 .DEFAULT_GOAL := help
 SHELL := /bin/bash
 
-.PHONY: help install dev dev-api dev-web test test-api test-web lint lint-api lint-web build build-api build-web clean up down logs
+.PHONY: help install dev dev-api dev-web test test-api test-web lint lint-api lint-web build build-api build-web clean up down logs e2e
 
 help: ## Show this help
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F ':.*## ' '{printf "  %-12s %s\n", $$1, $$2}'
@@ -52,6 +52,9 @@ up: ## Build and start the container stack on http://localhost:8080
 
 down: ## Stop the container stack
 	docker compose down
+
+e2e: ## Playwright end-to-end tests against the running stack (make up)
+	cd e2e && npm ci && npx playwright test
 
 logs: ## Follow container logs
 	docker compose logs -f

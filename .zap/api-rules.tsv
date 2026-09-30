@@ -1,0 +1,6 @@
+# ZAP API (active) scan rules for the notes API, driven by
+# backend/api/openapi.yaml. Same format as baseline-rules.tsv.
+#
+# The API answers every request with JSON and its own security headers, so
+# a missing nosniff header is a regression.
+10021	FAIL	(X-Content-Type-Options Header Missing)

@@ -139,12 +139,16 @@ jobs:
         run: go run "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}" ./...
 
   npm-audit:
-    name: npm audit
+    name: npm audit (${{ matrix.dir }})
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        dir: [frontend, e2e]
     defaults:
       run:
-        working-directory: frontend
+        working-directory: ${{ matrix.dir }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
