@@ -12,13 +12,15 @@ tool (the SARIF "category").
 | SAST | CodeQL (`security-extended`) | Go, TypeScript | Any alert at error level (via code scanning's PR check) |
 | SAST | gosec | `backend/` | Any finding |
 | SCA | govulncheck | Go module + stdlib | Any vulnerability in reachable code |
-| SCA | npm audit | `frontend/` | Advisories rated high or critical |
+| SCA | npm audit | `frontend/`, `e2e/` | Advisories rated high or critical |
 | SCA | Trivy filesystem | lockfiles, `go.mod` | Fixable HIGH or CRITICAL |
 | Secrets | gitleaks | full git history | Any leak |
 | IaC | Checkov | Dockerfiles, workflows | Any failed check |
 | CI/CD | zizmor | GitHub Actions workflows | Any finding |
 | IaC | KICS | `docker-compose.yml` | MEDIUM and above |
 | Container | Trivy image | both images | Fixable HIGH or CRITICAL vulns, or embedded secrets |
+| DAST | ZAP baseline (`dast.yml`) | running UI, passive | Any High alert, or any rule set to `FAIL` in `.zap/baseline-rules.tsv` |
+| DAST | ZAP API scan (`dast.yml`) | running API via `backend/api/openapi.yaml`, active | Any High alert, or any rule set to `FAIL` in `.zap/api-rules.tsv` |
 
 Lower severities are uploaded to the Security tab but do not block. The
 weekly scheduled run catches CVEs published after the code last changed.
@@ -54,6 +56,7 @@ Every suppression carries a reason. A bare suppression fails review.
 | Checkov | the resource | `# checkov:skip=CKV_DOCKER_2: healthcheck defined in compose` |
 | zizmor | the workflow line | `# zizmor: ignore[template-injection] -- value is a digest we produced` |
 | KICS | the compose file | `# kics-scan ignore-line` with a reason on the line above |
+| ZAP | `.zap/baseline-rules.tsv` or `.zap/api-rules.tsv` | `10096<TAB>IGNORE<TAB>(Timestamp Disclosure) createdAt is data, not a server clock leak`; ZAP findings don't go to the Security tab, so the rules file is the only record |
 
 Expiring suppressions (`exp:` in `.trivyignore`) re-open themselves, which
 forces the review date to happen.
@@ -81,3 +84,9 @@ forces the review date to happen.
   through the Trivy filesystem scan instead.
 - Private vulnerability reporting (see `SECURITY.md`) is the intake for
   findings from outside the pipeline; triage them the same way.
+- ZAP writes no SARIF here, so its alerts live in the `zap-reports`
+  artifact and the job summary, not the Security tab. The ZAP image is
+  pinned by digest in `dast.yml`, which Dependabot can't bump: refresh it
+  by hand now and then.
+- The ZAP scans see only what the OpenAPI spec and the spider reach, and
+  the app has no authentication, so there is no authenticated scan yet.

@@ -1,0 +1,169 @@
+name: DAST
+
+# Tests the running app from the outside: Playwright drives the UI like a
+# user, and OWASP ZAP probes the UI and API like an attacker. PRs and main
+# scan images built from the checkout; the nightly run scans the latest
+# signed release. Only ever point these scans at environments we own.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 3 * * *" # nightly, 03:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # Keyed by event too, so the nightly run never cancels a push run on main.
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+env:
+  # Scheduled runs test the latest release; everything else builds this commit.
+  SOURCE: ${{ github.event_name == 'schedule' && 'release' || 'build' }}
+  # ZAP "stable" as of 2026-09-30 (ZAP 2.16.1), pinned by digest.
+  ZAP_IMAGE: ghcr.io/zaproxy/zaproxy:stable@sha256:781a2bdaea47324e7bab583e2263f21d257b0aee61ed51521a5be45f5f5081ef
+
+jobs:
+  e2e:
+    name: E2E (Playwright)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: read # pull release images on the nightly run
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Local action from this commit's checkout (fetched without credentials).
+      - uses: ./.github/actions/start-stack # zizmor: ignore[self-repository]
+        with:
+          source: ${{ env.SOURCE }}
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+
+      - name: Install Playwright and Chromium
+        working-directory: e2e
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npx playwright install --with-deps chromium
+
+      - name: Run end-to-end tests
+        working-directory: e2e
+        run: npx playwright test
+
+      - name: Stack logs
+        if: failure()
+        run: docker compose logs --no-color
+
+      - name: Upload Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-report
+          path: |
+            e2e/playwright-report/
+            e2e/test-results/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  zap:
+    name: DAST (ZAP)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read # pull release images on the nightly run
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Local action from this commit's checkout (fetched without credentials).
+      - uses: ./.github/actions/start-stack # zizmor: ignore[self-repository]
+        with:
+          source: ${{ env.SOURCE }}
+
+      # ZAP runs as its own user (UID 1000) and writes reports into /zap/wrk.
+      - name: Prepare ZAP workspace
+        run: |
+          mkdir -p zap
+          cp .zap/*.tsv backend/api/openapi.yaml zap/
+          chmod -R a+rwX zap
+          docker pull --quiet "$ZAP_IMAGE"
+
+      # -I: WARN alerts don't fail the scan; FAIL rules still do (exit 1),
+      # and gate.sh fails on any High alert afterwards.
+      - name: Baseline scan (UI, passive)
+        run: |
+          set +e
+          docker run --rm --network host -v "$PWD/zap:/zap/wrk:rw" "$ZAP_IMAGE" \
+            zap-baseline.py -t http://localhost:8080 -c baseline-rules.tsv -I \
+              -r baseline.html -J baseline.json -w baseline.md
+          rc=$?
+          echo "zap-baseline exit code: $rc"
+          [ "$rc" -eq 0 ] || [ "$rc" -eq 2 ]
+
+      - name: API scan (OpenAPI, active)
+        if: ${{ !cancelled() }}
+        run: |
+          set +e
+          docker run --rm --network host -v "$PWD/zap:/zap/wrk:rw" "$ZAP_IMAGE" \
+            zap-api-scan.py -t openapi.yaml -f openapi -O http://localhost:8080 -c api-rules.tsv -I \
+              -r api.html -J api.json -w api.md
+          rc=$?
+          echo "zap-api-scan exit code: $rc"
+          [ "$rc" -eq 0 ] || [ "$rc" -eq 2 ]
+
+      - name: Fail on High alerts
+        if: ${{ !cancelled() }}
+        run: .zap/gate.sh zap/baseline.json zap/api.json
+
+      - name: Job summary
+        if: ${{ !cancelled() }}
+        run: |
+          for f in zap/baseline.md zap/api.md; do
+            [ -f "$f" ] && cat "$f" >> "$GITHUB_STEP_SUMMARY"
+          done
+          true
+
+      - name: Stack logs
+        if: failure()
+        run: docker compose logs --no-color --tail 200
+
+      - name: Upload ZAP reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: zap-reports
+          path: |
+            zap/*.html
+            zap/*.json
+            zap/*.md
+          retention-days: 30
+          if-no-files-found: ignore
+
+  # One stable name to require in branch rules.
+  dast-result:
+    name: DAST result
+    if: always()
+    needs: [e2e, zap]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check results
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Results: $RESULTS"
+          for r in $RESULTS; do
+            [ "$r" = success ] || exit 1
+          done

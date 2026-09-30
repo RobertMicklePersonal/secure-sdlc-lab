@@ -1,0 +1,11 @@
+# ZAP API (active) scan rules for the notes API, driven by
+# backend/api/openapi.yaml. Same format as baseline-rules.tsv.
+#
+# The API answers every request with JSON and its own security headers, so
+# a missing nosniff header is a regression.
+10021	FAIL	(X-Content-Type-Options Header Missing)
+90004	FAIL	(Insufficient Site Isolation Against Spectre Vulnerability) the API sets CORP same-origin
+#
+# Reviewed and accepted (2026-09-30, first scan on PR #18):
+100001	IGNORE	(Unexpected Content-Type was returned) Fuzzed non-API paths hit the SPA fallback, which returns index.html by design
+10106	IGNORE	(HTTP Only Site) The scanned stack is local compose over HTTP; TLS terminates at the deployment edge, not in this app

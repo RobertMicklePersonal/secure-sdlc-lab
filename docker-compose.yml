@@ -1,5 +1,7 @@
 # Local stack: UI on http://localhost:8080, which proxies /api to the API.
 # Only the UI publishes a port; the API is reachable just on the internal network.
+# API_IMAGE and WEB_IMAGE swap in published images (the nightly DAST run uses
+# the latest release): docker compose up --no-build.
 
 x-hardening: &hardening
   read_only: true
@@ -15,7 +17,7 @@ services:
   api:
     <<: *hardening
     build: ./backend
-    image: secure-sdlc-lab-api:local
+    image: ${API_IMAGE:-secure-sdlc-lab-api:local}
     environment:
       ADDR: ":8080"
       MAX_NOTES: "1000"
@@ -30,7 +32,7 @@ services:
   web:
     <<: *hardening
     build: ./frontend
-    image: secure-sdlc-lab-web:local
+    image: ${WEB_IMAGE:-secure-sdlc-lab-web:local}
     ports:
       - "127.0.0.1:8080:8080"
     # nginx needs somewhere writable for its pid file and temp buffers.

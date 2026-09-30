@@ -6,3 +6,7 @@ add_header X-Frame-Options "DENY" always;
 add_header Referrer-Policy "no-referrer" always;
 add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()" always;
 add_header Cross-Origin-Opener-Policy "same-origin" always;
+# Cross-origin isolation: nothing loads cross-origin, so both can be strict
+# (flagged by ZAP rule 90004).
+add_header Cross-Origin-Embedder-Policy "require-corp" always;
+add_header Cross-Origin-Resource-Policy "same-origin" always;

@@ -15,7 +15,7 @@ Go API + React (TypeScript, Vite) web app.
 | IaC | Checkov (Dockerfiles, workflows), KICS (compose) |
 | Containers | Multi-stage, distroless, non-root images; Trivy image scan |
 | CD | Build, sign (cosign keyless), Syft SBOM, SLSA provenance, publish to GitHub Container Registry |
-| DAST & QA | OWASP ZAP baseline scan, Playwright end-to-end tests |
+| DAST & QA | OWASP ZAP baseline and OpenAPI scans, Playwright end-to-end tests, nightly scan of the latest release |
 
 ## Roadmap
 
@@ -32,9 +32,11 @@ Work is tracked as GitHub Issues, one per phase:
 ## Layout
 
 ```
-backend/    Go API (standard library net/http, in-memory store)
+backend/    Go API (standard library net/http, in-memory store); OpenAPI spec in backend/api/
 frontend/   React + TypeScript + Vite UI
-.github/    workflows, templates, Dependabot
+e2e/        Playwright end-to-end tests, run against the container stack
+.zap/       OWASP ZAP rules and the High-alert gate
+.github/    workflows, the start-stack action, templates, Dependabot
 docs/       setup notes and runbooks
 ```
 
@@ -98,6 +100,24 @@ The workflow is hardened as supply-chain surface: `permissions: contents: read`,
 ## Security gates
 
 `.github/workflows/security.yml` runs CodeQL, gosec, govulncheck, npm audit, Trivy (filesystem and both images), gitleaks, Checkov, zizmor and KICS on every PR, on `main` and weekly. Each uploads SARIF to **Security → Code scanning**, and the `Security result` check is required on `main`. How to handle a finding (fix, accept with justification, or mark a false positive) is in [docs/security-triage.md](docs/security-triage.md).
+
+## DAST and end-to-end tests
+
+`.github/workflows/dast.yml` starts the real stack with `docker compose` and tests it from the outside, on every PR, on `main` and nightly:
+
+- **Playwright** (`e2e/`) drives the UI like a user (create, reload, delete, validation) and checks what an attacker would: security headers and CSP, markup rendered as text, and the API's handling of bad content types, unknown fields, oversized bodies and cross-origin requests.
+- **OWASP ZAP** runs a passive baseline scan of the UI and an active scan of the API driven by `backend/api/openapi.yaml`, both through nginx. Rules are tuned in `.zap/*.tsv` (see [docs/security-triage.md](docs/security-triage.md)); any High alert, or any rule set to `FAIL`, fails the job. HTML, JSON and Markdown reports are uploaded as the `zap-reports` artifact, and the Markdown lands in the job summary.
+
+The nightly run scans the **latest release** instead of a fresh build: it pulls both images from GHCR, `cosign verify`s that the release workflow signed them for that tag, and runs them pinned by digest. `DAST result` summarizes the jobs so it can be made a required check.
+
+Run the end-to-end tests locally against `make up`:
+
+```sh
+make up
+make e2e     # first run: cd e2e && npx playwright install chromium
+```
+
+Only ever point ZAP at environments you own.
 
 ## Releases
 
