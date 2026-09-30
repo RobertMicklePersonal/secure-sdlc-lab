@@ -29,15 +29,15 @@ type Note struct {
 // Store is an in-memory note store. The capacity bound keeps a client from
 // exhausting server memory by creating notes in a loop.
 type Store struct {
-	mu    sync.RWMutex
-	notes map[string]Note
-	max   int
-	now   func() time.Time
+	mu       sync.RWMutex
+	notes    map[string]Note
+	capacity int
+	now      func() time.Time
 }
 
-// NewStore returns an empty store that holds at most max notes.
-func NewStore(max int) *Store {
-	return &Store{notes: make(map[string]Note), max: max, now: time.Now}
+// NewStore returns an empty store that holds at most capacity notes.
+func NewStore(capacity int) *Store {
+	return &Store{notes: make(map[string]Note), capacity: capacity, now: time.Now}
 }
 
 // List returns all notes, newest first.
@@ -76,7 +76,7 @@ func (s *Store) Create(title, body string) (Note, error) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if len(s.notes) >= s.max {
+	if len(s.notes) >= s.capacity {
 		return Note{}, ErrFull
 	}
 	now := s.now().UTC()

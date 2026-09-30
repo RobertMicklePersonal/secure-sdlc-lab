@@ -21,7 +21,7 @@ These can't be set from files in the repo. Apply them in **Settings**.
   - Required approvals: 0 while working solo (raise to 1 when collaborators join)
   - [ ] Require review from Code Owners
   - [ ] Dismiss stale approvals on new commits
-- [ ] Require status checks to pass (add the CI and security checks after phases 4-5 land)
+- [ ] Require status checks to pass: **CI result** (from `.github/workflows/ci.yml`; it fails if any CI job fails). Add the security checks after phase 5 lands.
 - [ ] Require linear history
 
 ## General (Settings → General)
