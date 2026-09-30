@@ -14,7 +14,7 @@ Go API + React (TypeScript, Vite) web app.
 | Secrets | gitleaks, GitHub secret scanning + push protection |
 | IaC | Checkov (Dockerfiles, workflows), KICS (compose) |
 | Containers | Multi-stage, distroless, non-root images; Trivy image scan |
-| CD | Build, sign (cosign), SBOM, publish to GitHub Container Registry |
+| CD | Build, sign (cosign keyless), Syft SBOM, SLSA provenance, publish to GitHub Container Registry |
 | DAST & QA | OWASP ZAP baseline scan, Playwright end-to-end tests |
 
 ## Roadmap
@@ -97,7 +97,47 @@ The workflow is hardened as supply-chain surface: `permissions: contents: read`,
 
 ## Security gates
 
-`.github/workflows/security.yml` runs CodeQL, gosec, govulncheck, npm audit, Trivy (filesystem and both images), gitleaks, Checkov and KICS on every PR, on `main` and weekly. Each uploads SARIF to **Security → Code scanning**, and the `Security result` check is required on `main`. How to handle a finding (fix, accept with justification, or mark a false positive) is in [docs/security-triage.md](docs/security-triage.md).
+`.github/workflows/security.yml` runs CodeQL, gosec, govulncheck, npm audit, Trivy (filesystem and both images), gitleaks, Checkov, zizmor and KICS on every PR, on `main` and weekly. Each uploads SARIF to **Security → Code scanning**, and the `Security result` check is required on `main`. How to handle a finding (fix, accept with justification, or mark a false positive) is in [docs/security-triage.md](docs/security-triage.md).
+
+## Releases
+
+Pushing a tag like `v1.2.3` runs `.github/workflows/release.yml`. It refuses tags that aren't on `main`, then for each image:
+
+1. builds and pushes `ghcr.io/robertmicklepersonal/secure-sdlc-lab-backend` and `-frontend`, tagged `1.2.3`, `1.2` and `sha-<commit>`;
+2. signs the image digest with **cosign keyless** (a short-lived certificate from Sigstore, bound to this workflow via GitHub OIDC; no keys to manage or leak);
+3. generates an **SPDX SBOM with Syft** and attaches it to the image as a signed attestation;
+4. records **SLSA build provenance** with `actions/attest-build-provenance`.
+
+Finally it publishes a GitHub Release with the image digests, a changelog generated from merged PRs, and the SBOM files.
+
+```sh
+git tag -s v1.2.3 -m "v1.2.3"   # or -a if you don't sign tags
+git push origin v1.2.3
+```
+
+### Verifying a release
+
+Always verify and deploy by digest (listed in the release notes); tags can be moved.
+
+```sh
+IMAGE=ghcr.io/robertmicklepersonal/secure-sdlc-lab-backend@sha256:<digest>
+
+# Signature: built by this repo's release workflow, from a v* tag
+cosign verify "$IMAGE" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-identity-regexp '^https://github.com/RobertMicklePersonal/secure-sdlc-lab/\.github/workflows/release\.yml@refs/tags/v'
+
+# SBOM: signed by the same identity; prints the SPDX document
+cosign verify-attestation "$IMAGE" --type spdxjson \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-identity-regexp '^https://github.com/RobertMicklePersonal/secure-sdlc-lab/\.github/workflows/release\.yml@refs/tags/v' \
+  | jq -r '.payload | @base64d | fromjson | .predicate.packages[].name' | sort -u
+
+# Provenance: which repo, workflow and commit built it
+gh attestation verify "oci://$IMAGE" --repo RobertMicklePersonal/secure-sdlc-lab
+```
+
+If any of these fail, don't run the image.
 
 ## Reporting a vulnerability
 

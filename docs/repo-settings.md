@@ -28,3 +28,8 @@ These can't be set from files in the repo. Apply them in **Settings**.
 
 - [ ] Allow squash merging only
 - [ ] Automatically delete head branches
+
+## Releases (after phase 6)
+
+- [ ] Tag ruleset (Settings → Rules → Rulesets → New tag ruleset): target `v*`, restrict creations, updates and deletions to admins, so only maintainers can cut a release and a release tag can't be moved.
+- [ ] After the first release, open each package (org page → Packages → `secure-sdlc-lab-backend` / `-frontend`) → Package settings: set visibility to **Public** and confirm it is linked to this repository. New GHCR packages start private.
