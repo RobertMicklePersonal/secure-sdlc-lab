@@ -1,0 +1,51 @@
+# Local stack: UI on http://localhost:8080, which proxies /api to the API.
+# Only the UI publishes a port; the API is reachable just on the internal network.
+
+x-hardening: &hardening
+  read_only: true
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+  pids_limit: 100
+  mem_limit: 256m
+  cpus: 0.5
+  restart: unless-stopped
+
+services:
+  api:
+    <<: *hardening
+    build: ./backend
+    image: secure-sdlc-lab-api:local
+    environment:
+      ADDR: ":8080"
+      MAX_NOTES: "1000"
+    networks: [backend]
+    healthcheck:
+      test: ["CMD", "/api", "-healthcheck"]
+      interval: 15s
+      timeout: 3s
+      start_period: 5s
+      retries: 3
+
+  web:
+    <<: *hardening
+    build: ./frontend
+    image: secure-sdlc-lab-web:local
+    ports:
+      - "127.0.0.1:8080:8080"
+    # nginx needs somewhere writable for its pid file and temp buffers.
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [backend]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 15s
+      timeout: 3s
+      start_period: 5s
+      retries: 3
+
+networks:
+  backend: {}
