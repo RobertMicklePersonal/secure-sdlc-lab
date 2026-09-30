@@ -46,7 +46,7 @@ Needs Go 1.27+, Node 22+ and make. Docker is optional, for `make up`.
 make install   # npm ci in frontend/
 make dev       # API on :8080, UI on http://localhost:5173
 make test      # go test -race + vitest
-make lint      # gofmt, go vet, oxlint, tsc
+make lint      # gofmt, go vet, golangci-lint, oxlint, tsc
 ```
 
 To run the hardened containers instead:
@@ -88,6 +88,12 @@ Configuration is by environment variable:
 - **Containers:** multi-stage builds; the API runs from `distroless/static` (no shell or package manager) as UID 65532, the UI from `nginx-unprivileged` as UID 101; base images pinned by digest. Compose runs both with a read-only root filesystem, all capabilities dropped, `no-new-privileges`, PID, memory and CPU limits, and healthchecks. Only the UI port is published, on 127.0.0.1; the API is internal.
 - **UI headers:** nginx serves a strict CSP (`default-src 'self'`, no inline scripts or styles, `frame-ancestors 'none'`), plus `nosniff`, `DENY`, `no-referrer` and a restrictive `Permissions-Policy`; `server_tokens off` and a 64 KiB body cap.
 - **UI:** React escapes all note text (no `dangerouslySetInnerHTML`); inputs mirror server limits.
+
+## CI
+
+`.github/workflows/ci.yml` runs on every pull request and on pushes to `main`: Go (gofmt, vet, golangci-lint, `go test -race` with coverage), frontend (`npm ci --ignore-scripts`, oxlint, tsc, vitest, build) and a build of both Docker images. The `CI result` job summarizes them and is the check the `main` ruleset requires.
+
+The workflow is hardened as supply-chain surface: `permissions: contents: read`, every action pinned to a commit SHA (Dependabot bumps them), `persist-credentials: false`, no `pull_request_target`, and stale PR runs cancelled.
 
 ## Reporting a vulnerability
 

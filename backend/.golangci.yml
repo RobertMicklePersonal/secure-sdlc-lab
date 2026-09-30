@@ -1,0 +1,21 @@
+# golangci-lint v2 configuration. gosec runs separately in the security
+# workflow (phase 5); this set is about correctness and hygiene.
+version: "2"
+
+linters:
+  default: standard # errcheck, govet, ineffassign, staticcheck, unused
+  enable:
+    - bodyclose
+    - errorlint
+    - gocritic
+    - misspell
+    - nilerr
+    - noctx
+    - revive
+    - unconvert
+    - usestdlibvars
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

@@ -78,12 +78,17 @@ func run(log *slog.Logger) error {
 }
 
 func healthcheck(url string) int {
-	client := &http.Client{Timeout: 2 * time.Second}
-	resp, err := client.Get(url)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
 	if err != nil {
 		return 1
 	}
-	defer resp.Body.Close()
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return 1
+	}
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return 1
 	}

@@ -29,9 +29,12 @@ test-web: ## Vitest
 
 lint: lint-api lint-web ## Lint and typecheck everything
 
-lint-api: ## gofmt check and go vet
+GOLANGCI_LINT_VERSION ?= v2.14.0
+
+lint-api: ## gofmt check, go vet and golangci-lint (same version as CI)
 	cd backend && test -z "$$(gofmt -l .)" || { gofmt -l .; exit 1; }
 	cd backend && go vet ./...
+	cd backend && go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION) run ./...
 
 lint-web: ## oxlint and tsc
 	cd frontend && npm run lint && npm run typecheck
