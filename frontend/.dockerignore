@@ -1,0 +1,13 @@
+# Send only what the build needs; never node_modules or local env files.
+*
+!package.json
+!package-lock.json
+!index.html
+!vite.config.ts
+!tsconfig*.json
+!public/
+!src/
+!nginx/
+**/*.test.ts
+**/*.test.tsx
+src/test/

@@ -40,13 +40,20 @@ docs/       setup notes and runbooks
 
 ## Local development
 
-Needs Go 1.27+, Node 22+ and make.
+Needs Go 1.27+, Node 22+ and make. Docker is optional, for `make up`.
 
 ```sh
 make install   # npm ci in frontend/
 make dev       # API on :8080, UI on http://localhost:5173
 make test      # go test -race + vitest
 make lint      # gofmt, go vet, oxlint, tsc
+```
+
+To run the hardened containers instead:
+
+```sh
+make up        # docker compose: UI + API on http://localhost:8080
+make down
 ```
 
 In dev, Vite proxies `/api` to the Go server, so the browser sees one origin and CORS stays closed.
@@ -78,6 +85,8 @@ Configuration is by environment variable:
 - **Headers:** `Content-Security-Policy: default-src 'none'`, `nosniff`, `X-Frame-Options: DENY`, `no-referrer`, `no-store`.
 - **CORS:** exact-match allowlist, never reflects arbitrary origins, never allows credentials.
 - **Logging:** one JSON line per request with a request ID; no headers or note contents are logged, and panics return a generic 500.
+- **Containers:** multi-stage builds; the API runs from `distroless/static` (no shell or package manager) as UID 65532, the UI from `nginx-unprivileged` as UID 101; base images pinned by digest. Compose runs both with a read-only root filesystem, all capabilities dropped, `no-new-privileges`, PID, memory and CPU limits, and healthchecks. Only the UI port is published, on 127.0.0.1; the API is internal.
+- **UI headers:** nginx serves a strict CSP (`default-src 'self'`, no inline scripts or styles, `frame-ancestors 'none'`), plus `nosniff`, `DENY`, `no-referrer` and a restrictive `Permissions-Policy`; `server_tokens off` and a 64 KiB body cap.
 - **UI:** React escapes all note text (no `dangerouslySetInnerHTML`); inputs mirror server limits.
 
 ## Reporting a vulnerability

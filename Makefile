@@ -2,7 +2,7 @@
 .DEFAULT_GOAL := help
 SHELL := /bin/bash
 
-.PHONY: help install dev dev-api dev-web test test-api test-web lint lint-api lint-web build build-api build-web clean
+.PHONY: help install dev dev-api dev-web test test-api test-web lint lint-api lint-web build build-api build-web clean up down logs
 
 help: ## Show this help
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F ':.*## ' '{printf "  %-12s %s\n", $$1, $$2}'
@@ -43,6 +43,15 @@ build-api: ## Static, stripped Go binary in backend/bin/
 
 build-web: ## Production UI bundle in frontend/dist/
 	cd frontend && npm run build
+
+up: ## Build and start the container stack on http://localhost:8080
+	docker compose up -d --build --wait
+
+down: ## Stop the container stack
+	docker compose down
+
+logs: ## Follow container logs
+	docker compose logs -f
 
 clean: ## Remove build output
 	rm -rf backend/bin frontend/dist
