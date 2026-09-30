@@ -11,8 +11,8 @@ Go API + React (TypeScript, Vite) web app.
 | CI | GitHub Actions: lint, test, build on every PR |
 | SAST | CodeQL (Go + TypeScript), gosec |
 | SCA | govulncheck, npm audit, Trivy filesystem scan, Dependabot |
-| Secrets | GitHub secret scanning + push protection |
-| IaC | Checkov (Dockerfiles, compose, workflows) |
+| Secrets | gitleaks, GitHub secret scanning + push protection |
+| IaC | Checkov (Dockerfiles, workflows), KICS (compose) |
 | Containers | Multi-stage, distroless, non-root images; Trivy image scan |
 | CD | Build, sign (cosign), SBOM, publish to GitHub Container Registry |
 | DAST & QA | OWASP ZAP baseline scan, Playwright end-to-end tests |
@@ -94,6 +94,10 @@ Configuration is by environment variable:
 `.github/workflows/ci.yml` runs on every pull request and on pushes to `main`: Go (gofmt, vet, golangci-lint, `go test -race` with coverage), frontend (`npm ci --ignore-scripts`, oxlint, tsc, vitest, build) and a build of both Docker images. The `CI result` job summarizes them and is the check the `main` ruleset requires.
 
 The workflow is hardened as supply-chain surface: `permissions: contents: read`, every action pinned to a commit SHA (Dependabot bumps them), `persist-credentials: false`, no `pull_request_target`, and stale PR runs cancelled.
+
+## Security gates
+
+`.github/workflows/security.yml` runs CodeQL, gosec, govulncheck, npm audit, Trivy (filesystem and both images), gitleaks, Checkov and KICS on every PR, on `main` and weekly. Each uploads SARIF to **Security → Code scanning**, and the `Security result` check is required on `main`. How to handle a finding (fix, accept with justification, or mark a false positive) is in [docs/security-triage.md](docs/security-triage.md).
 
 ## Reporting a vulnerability
 
