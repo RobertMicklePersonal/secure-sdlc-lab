@@ -30,6 +30,7 @@ env:
   GITLEAKS_VERSION: 8.30.1
   GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
   CHECKOV_VERSION: 3.3.20
+  ZIZMOR_VERSION: 1.30.1
   KICS_IMAGE: checkmarx/kics:v2.1.20@sha256:3e5a268eb8adda2e5a483c9359ddfc4cd520ab856a7076dc0b1d8784a37e2602
 
 jobs:
@@ -233,13 +234,71 @@ jobs:
         run: >-
           checkov --directory . --framework dockerfile github_actions
           --skip-download --compact
-          --output cli --output sarif --output-file-path checkov-results
+          --output cli --output sarif --output json --output-file-path checkov-results
+      # Checkov validates workflows against its own bundled schema and
+      # silently skips any it rejects (for example the newer `attestations`
+      # permission). Make that visible; zizmor below still covers them.
+      - name: Report workflows Checkov skipped
+        if: always() && steps.scan.outcome != 'skipped'
+        run: |
+          python3 - <<'PY'
+          import glob, json, os
+          data = json.load(open("checkov-results/results_json.json"))
+          reports = data if isinstance(data, list) else [data]
+          scanned = {
+              c["file_path"].lstrip("/")
+              for r in reports if r.get("check_type") == "github_actions"
+              for k in ("passed_checks", "failed_checks", "skipped_checks")
+              for c in r.get("results", {}).get(k, [])
+          }
+          workflows = sorted(glob.glob(".github/workflows/*.y*ml"))
+          skipped = [w for w in workflows if not any(w.endswith(p) or p.endswith(w) for p in scanned)]
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as out:
+              out.write(f"Checkov scanned {len(workflows) - len(skipped)} of {len(workflows)} workflows.\n")
+              for w in skipped:
+                  out.write(f"- not scanned: `{w}`\n")
+          for w in skipped:
+              print(f"::warning file={w}::Checkov skipped this workflow (schema rejected it); zizmor still audits it")
+          PY
       - name: Upload SARIF
         if: always() && steps.scan.outcome != 'skipped'
         uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
           sarif_file: checkov-results/results_sarif.sarif
           category: checkov
+
+  # Workflow-specific auditor: template injection, excessive permissions,
+  # unpinned or impostor action SHAs, credential persistence, and more.
+  zizmor:
+    name: zizmor (workflows)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      security-events: write # upload SARIF to code scanning
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install zizmor
+        run: pipx install "zizmor==${ZIZMOR_VERSION}"
+      # Online audits use the read-only token to check, for example, that
+      # every pinned SHA really belongs to the action's repository.
+      # SARIF mode always exits 0, so it runs first for the report and the
+      # plain run below is the gate.
+      - name: zizmor (SARIF)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: zizmor --format sarif .github/workflows > zizmor.sarif
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          sarif_file: zizmor.sarif
+          category: zizmor
+      - name: zizmor (gate)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: zizmor .github/workflows
 
   # Checkov has no docker-compose support, so KICS covers the compose file.
   kics:
@@ -316,7 +375,7 @@ jobs:
   security-result:
     name: Security result
     if: always()
-    needs: [codeql, gosec, govulncheck, npm-audit, trivy-fs, gitleaks, checkov, kics, trivy-image]
+    needs: [codeql, gosec, govulncheck, npm-audit, trivy-fs, gitleaks, checkov, zizmor, kics, trivy-image]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

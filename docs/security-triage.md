@@ -16,6 +16,7 @@ tool (the SARIF "category").
 | SCA | Trivy filesystem | lockfiles, `go.mod` | Fixable HIGH or CRITICAL |
 | Secrets | gitleaks | full git history | Any leak |
 | IaC | Checkov | Dockerfiles, workflows | Any failed check |
+| CI/CD | zizmor | GitHub Actions workflows | Any finding |
 | IaC | KICS | `docker-compose.yml` | MEDIUM and above |
 | Container | Trivy image | both images | Fixable HIGH or CRITICAL vulns, or embedded secrets |
 
@@ -51,6 +52,7 @@ Every suppression carries a reason. A bare suppression fails review.
 | Trivy | `.trivyignore` at the repo root | `CVE-2026-12345 exp:2026-12-31 # not reachable: we never call X` |
 | gitleaks | `.gitleaksignore` | the finding's fingerprint, with a comment. A real secret is never ignored: **rotate it first**, then remove it from history if needed |
 | Checkov | the resource | `# checkov:skip=CKV_DOCKER_2: healthcheck defined in compose` |
+| zizmor | the workflow line | `# zizmor: ignore[template-injection] -- value is a digest we produced` |
 | KICS | the compose file | `# kics-scan ignore-line` with a reason on the line above |
 
 Expiring suppressions (`exp:` in `.trivyignore`) re-open themselves, which
@@ -70,9 +72,11 @@ forces the review date to happen.
 
 ## Known gaps
 
-- Checkov silently skips a workflow its schema rejects (for example an
-  expression in `concurrency.cancel-in-progress`). If a workflow change makes
-  Checkov's `github_actions` pass count drop, check for this.
+- Checkov silently skips any workflow its bundled schema rejects: an
+  expression in `concurrency.cancel-in-progress`, or the newer
+  `attestations` permission (so `release.yml` is never scanned by Checkov).
+  The Checkov job now lists skipped workflows as warnings and in the job
+  summary, and zizmor audits every workflow regardless.
 - `npm audit` has no SARIF output; its advisories reach the Security tab
   through the Trivy filesystem scan instead.
 - Private vulnerability reporting (see `SECURITY.md`) is the intake for
